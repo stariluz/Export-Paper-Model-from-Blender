@@ -9,7 +9,7 @@ from mathutils import Vector
 from .unfolder import Unfolder, UnfoldError, default_priority_effect
 from .svg import Svg
 from .pdf import Pdf
-from .jsonl import Jsonl
+from .json import Json
 
 
 global_paper_sizes = [
@@ -377,7 +377,7 @@ class ExportPaperModel(bpy.types.Operator):
             self.unfolder.do_create_uvmap = self.do_create_uvmap
             if self.object.data.paper_island_list:
                 self.unfolder.copy_island_names(self.object.data.paper_island_list)
-            exporter_class = Svg if self.properties.file_format == 'SVG' else Jsonl if properties.file_format == 'JSON' else Pdf
+            exporter_class = Svg if self.properties.file_format == 'SVG' else Json if self.properties.file_format == 'JSON' else Pdf
             exporter = exporter_class(self.properties)
             self.unfolder.save(self.properties, exporter)
             self.report({'INFO'}, "Saved a {}-page document".format(len(self.unfolder.mesh.pages)))
