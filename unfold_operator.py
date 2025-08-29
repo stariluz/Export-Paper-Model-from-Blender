@@ -9,6 +9,7 @@ from mathutils import Vector
 from .unfolder import Unfolder, UnfoldError, default_priority_effect
 from .svg import Svg
 from .pdf import Pdf
+from .json import Json
 
 
 global_paper_sizes = [
@@ -296,6 +297,7 @@ class ExportPaperModel(bpy.types.Operator):
         default='PDF', items=[
             ('PDF', "PDF", "Adobe Portable Document Format 1.4"),
             ('SVG', "SVG", "W3C Scalable Vector Graphics"),
+            ('JSON', 'JSON', 'JavaScript Object Notation'),
         ])
     image_packing: bpy.props.EnumProperty(
         name="Image Packing Method", description="Method of attaching baked image(s) to the SVG",
@@ -375,7 +377,7 @@ class ExportPaperModel(bpy.types.Operator):
             self.unfolder.do_create_uvmap = self.do_create_uvmap
             if self.object.data.paper_island_list:
                 self.unfolder.copy_island_names(self.object.data.paper_island_list)
-            exporter_class = Svg if self.properties.file_format == 'SVG' else Pdf
+            exporter_class = Svg if self.properties.file_format == 'SVG' else Json if self.properties.file_format == 'JSON' else Pdf
             exporter = exporter_class(self.properties)
             self.unfolder.save(self.properties, exporter)
             self.report({'INFO'}, "Saved a {}-page document".format(len(self.unfolder.mesh.pages)))
@@ -506,7 +508,7 @@ class ExportPaperModel(bpy.types.Operator):
 
 
 def menu_func_export(self, context):
-    self.layout.operator("export_mesh.paper_model", text="Paper Model (.pdf/.svg)")
+    self.layout.operator("export_mesh.paper_model", text="Paper Model (.pdf/.svg/.json)")
 
 
 def menu_func_unfold(self, context):
