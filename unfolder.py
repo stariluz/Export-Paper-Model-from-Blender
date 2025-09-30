@@ -1,8 +1,11 @@
 # unfolder.py: processing of geometry and representation of the resulting net
 
+# todo: rename neighbor_left, neighbor_right -> neighbor_next, neighbor_prev
+
 import os.path as os_path
+from functools import cached_property
 from itertools import chain, product, combinations
-from math import pi, asin
+from math import pi, asin, hypot, radians
 import bpy
 import bmesh
 from mathutils import Matrix, Vector
@@ -16,6 +19,7 @@ default_priority_effect = {
     'LENGTH': -0.05
 }
 
+obtuse_angle = radians(105)
 
 def is_upsidedown_wrong(name):
     """Tell if the string would get a different meaning if written upside down"""
@@ -35,6 +39,10 @@ def pairs(sequence):
     yield this, first
 
 
+def sin_from_cos(cos):
+    return (1 - cos**2)**0.5 if abs(cos) < 1 else 0
+
+
 def rotation_matrix(sin, cos):
     return Matrix(((cos, -sin), (sin, cos)))
 
@@ -42,6 +50,10 @@ def rotation_matrix(sin, cos):
 def fitting_matrix(v1, v2):
     """Get a matrix that rotates v1 to the same direction as v2"""
     return (1 / v1.length_squared) * rotation_matrix(v1.x*v2.y - v1.y*v2.x, v1.x*v2.x + v1.y*v2.y)
+
+
+def rot90(vec):
+    return Vector((vec.y, -vec.x))
 
 
 def z_up_matrix(n):
@@ -85,7 +97,7 @@ def cage_fit(points, aspect):
             # using substitution t = tan(rot / 2)
             q = aspect * horz.x - vert.y
             r = vert.x + aspect * horz.y
-            t = ((r**2 + q**2)**0.5 - r) / q if q != 0 else 0
+            t = (hypot(q, r) - r) / q if q != 0 else 0
             t = -1 / t if abs(t) > 1 else t  # pick the positive solution
             siny, cosy = 2 * t / (1 + t**2), (1 - t**2) / (1 + t**2)
             rot = rotation_matrix(siny, cosy)
@@ -203,7 +215,7 @@ class Unfolder:
         # after this call, all dimensions will be in meters
         self.mesh.scale_islands(unit_scale/properties.scale)
         if properties.do_create_stickers:
-            self.mesh.generate_stickers(properties.sticker_width, properties.do_create_numbers)
+            self.mesh.generate_stickers(properties.sticker_width, properties.do_create_numbers, properties.paper_thickness)
         elif properties.do_create_numbers:
             self.mesh.generate_numbers_alone(properties.sticker_width)
 
@@ -406,7 +418,7 @@ class Mesh:
                     right.neighbor_left = left
         return True
 
-    def generate_stickers(self, default_width, do_create_numbers=True):
+    def generate_stickers(self, default_width, do_create_numbers=True, paper_thickness=0.0):
         """Add sticker faces where they are needed."""
         def uvedge_priority(uvedge):
             """Returns whether it is a good idea to stick something on this edge's face"""
@@ -414,41 +426,64 @@ class Mesh:
             face = uvedge.uvface.face
             return face.calc_area() / face.calc_perimeter()
 
-        def add_sticker(uvedge, index, target_uvedge):
-            uvedge.sticker = Sticker(uvedge, default_width, index, target_uvedge)
-            uvedge.uvface.island.add_marker(uvedge.sticker)
-
         def is_index_obvious(uvedge, target):
+            """Check if it is easy to guess that `uvedge` belongs to `target`"""
             if uvedge in (target.neighbor_left, target.neighbor_right):
+                # direct neighbor
                 return True
-            if uvedge.neighbor_left.loop.edge is target.neighbor_right.loop.edge and uvedge.neighbor_right.loop.edge is target.neighbor_left.loop.edge:
+            if (uvedge.neighbor_left.loop.edge is target.neighbor_right.loop.edge
+                    and uvedge.neighbor_right.loop.edge is target.neighbor_left.loop.edge):
+                # consecutive string of stickers
                 return True
             return False
 
+        planned_stickers = {}  # source -> target
         for edge in self.edges.values():
-            index = None
+            target = edge.uvedges[0]
             if edge.is_main_cut and len(edge.uvedges) >= 2 and edge.vector.length_squared > 0:
-                target, source = edge.uvedges[:2]
+                source = edge.uvedges[1]
                 if uvedge_priority(target) < uvedge_priority(source):
                     target, source = source, target
                 target_island = target.uvface.island
-                if do_create_numbers:
-                    for uvedge in [source] + edge.uvedges[2:]:
-                        if not is_index_obvious(uvedge, target):
-                            # it will not be clear to see that these uvedges should be sticked together
-                            # So, create an arrow and put the index on all stickers
-                            target_island.sticker_numbering += 1
-                            index = str(target_island.sticker_numbering)
-                            if is_upsidedown_wrong(index):
-                                index += "."
-                            target_island.add_marker(Arrow(target, default_width, index))
-                            break
-                add_sticker(source, index, target)
-            elif len(edge.uvedges) > 2:
-                target = edge.uvedges[0]
+                planned_stickers[source] = target
             if len(edge.uvedges) > 2:
+                # todo: paper_thickness compensation is not correct for multiple stacked stickers
                 for source in edge.uvedges[2:]:
-                    add_sticker(source, index, target)
+                    planned_stickers[source] = target
+        if paper_thickness:
+            new_edges = []
+            neighbor_angle = {edge: [pi + edge.neighbor_right.vector.angle_signed(edge.vector),
+                    pi + edge.vector.angle_signed(edge.neighbor_left.vector)]
+                for edge in planned_stickers}
+            for source, target in planned_stickers.items():
+                loop_right, loop_left = source.loop.link_loop_prev, source.loop.link_loop_next
+                if source.uvface.flipped:
+                    loop_right, loop_left = loop_left, loop_right
+                is_double_vertex = [False, False]
+                if source.uvface.edges[loop_right] not in planned_stickers and neighbor_angle[source][0] >= obtuse_angle:
+                    new_edges.append(source.insert_neighbor_right())
+                    is_double_vertex[0] = True
+                if source.uvface.edges[loop_left] not in planned_stickers and neighbor_angle[source][1] >= obtuse_angle:
+                    new_edges.append(source.insert_neighbor_left())
+                    is_double_vertex[1] = True
+                cos_angle = source.uvface.face.normal.dot(target.uvface.face.normal)
+                offset = paper_thickness / sin_from_cos(cos_angle)
+                source.slide(offset, is_double_vertex)
+            # TODO: merge zero-length new_edges
+        for source, target in planned_stickers.items():
+            index = None
+            if do_create_numbers:
+                for uvedge in [source] + edge.uvedges[2:]:
+                    # create numbers (and arrows) only if necessary for understanding
+                    if not is_index_obvious(uvedge, target):
+                        target_island.sticker_numbering += 1
+                        index = str(target_island.sticker_numbering)
+                        if is_upsidedown_wrong(index):
+                            index += "."
+                        target_island.add_marker(Arrow(target, default_width, index))
+                        break
+            source.sticker = Sticker(source, default_width, index, target)
+            source.uvface.island.add_marker(source.sticker)
 
     def generate_numbers_alone(self, size):
         global_numbering = 0
@@ -997,11 +1032,15 @@ class UVVertex:
 class UVEdge:
     """Edge in 2D"""
     # Every UVEdge is attached to only one UVFace
-    # UVEdges are doubled as needed because they both have to point clockwise around their faces
+    # UVEdges are doubled as needed because they both have to point counter-clockwise around their faces
     __slots__ = (
         'va', 'vb', 'uvface', 'loop',
         'min', 'max', 'bottom', 'top',
         'neighbor_left', 'neighbor_right', 'sticker')
+
+    # uvface.flipped changes the meaning of va <-> vb
+    # if neither of faces is flipped, uvedge.va == uvedge.neighbor_right.vb
+    # neighbor_right is always clockwise around the island boundary
 
     def __init__(self, vertex1: UVVertex, vertex2: UVVertex, uvface, loop):
         self.va = vertex1
@@ -1011,6 +1050,10 @@ class UVEdge:
         self.sticker = None
         self.loop = loop
 
+    @property
+    def vector(self):
+        return self.vb.co - self.va.co if not self.uvface.flipped else self.va.co - self.vb.co
+
     def update(self):
         """Update data if UVVertices have moved"""
         self.min, self.max = (self.va, self.vb) if (self.va.tup < self.vb.tup) else (self.vb, self.va)
@@ -1019,6 +1062,51 @@ class UVEdge:
 
     def is_uvface_upwards(self):
         return (self.va.tup < self.vb.tup) ^ self.uvface.flipped
+
+    def slide(self, offset, allow_orthogonal=(True, True)):
+        normal = rot90(self.vector).normalized()
+        def slide_vertex(vertex, rail_loop, sign, angle, orthogonal):
+            direction = self.uvface.edges[rail_loop].vector.normalized() if angle < obtuse_angle or not orthogonal else normal
+            if self.uvface.flipped:
+                sign *= -1
+            distance = offset * sign / max(abs(normal.dot(direction)), 0.1)
+            vertex.co += direction * distance
+
+        slide_vertex(self.va, self.loop.link_loop_prev, -1, self.loop.calc_angle(), allow_orthogonal[0])
+        slide_vertex(self.vb, self.loop.link_loop_next, 1, self.loop.link_loop_next.calc_angle(), allow_orthogonal[1])
+        self.update()
+
+    def insert_neighbor_left(self):
+        vertex_left = "vb" if not self.uvface.flipped else "va"
+        vb = getattr(self, vertex_left)
+        va = UVVertex(vb.co.copy())
+        self.uvface.island.fake_vertices.append(va.co)
+        setattr(self, vertex_left, va)
+        if self.uvface.flipped:
+            va, vb = vb, va
+        uvedge = UVEdge(va, vb, self.uvface, self.loop)
+        self.uvface.island.boundary.append(uvedge)
+        uvedge.neighbor_left = self.neighbor_left
+        uvedge.neighbor_right = self
+        self.neighbor_left.neighbor_right = self.neighbor_left = uvedge
+        self.update()
+        return uvedge
+
+    def insert_neighbor_right(self):
+        vertex_right = "va" if not self.uvface.flipped else "vb"
+        va = getattr(self, vertex_right)
+        vb = UVVertex(va.co.copy())
+        self.uvface.island.fake_vertices.append(vb.co)
+        setattr(self, vertex_right, vb)
+        if self.uvface.flipped:
+            va, vb = vb, va
+        uvedge = UVEdge(va, vb, self.uvface, self.loop)
+        self.uvface.island.boundary.append(uvedge)
+        uvedge.neighbor_right = self.neighbor_right
+        uvedge.neighbor_left = self
+        self.neighbor_right.neighbor_left = self.neighbor_right = uvedge
+        self.update()
+        return uvedge
 
     def __repr__(self):
         return "({0.va} - {0.vb})".format(self)
@@ -1033,6 +1121,10 @@ class PhantomUVEdge:
         self.min, self.max = (self.va, self.vb) if (self.va.tup < self.vb.tup) else (self.vb, self.va)
         y1, y2 = self.va.co.y, self.vb.co.y
         self.bottom, self.top = (y1, y2) if y1 < y2 else (y2, y1)
+
+    @property
+    def vector(self):
+        return self.vb.co - self.va.co
 
     def is_uvface_upwards(self):
         return self.va.tup < self.vb.tup
@@ -1061,7 +1153,7 @@ class Arrow:
 
     def __init__(self, uvedge, size, index):
         self.text = str(index)
-        edge = (uvedge.vb.co - uvedge.va.co) if not uvedge.uvface.flipped else (uvedge.va.co - uvedge.vb.co)
+        edge = uvedge.vector
         self.center = (uvedge.va.co + uvedge.vb.co) / 2
         self.size = size
         tangent = edge.normalized()
@@ -1085,7 +1177,7 @@ class Sticker:
 
         # angle a is at vertex uvedge.va, b is at uvedge.vb
         cos_a = cos_b = 0.5
-        sin_a = sin_b = 0.75**0.5
+        sin_a = sin_b = sin_from_cos(cos_a)
         # len_a is length of the side adjacent to vertex a, len_b likewise
         len_a = len_b = sticker_width / sin_a
 
@@ -1095,12 +1187,12 @@ class Sticker:
         elif second_vertex == other_first:
             cos_b = max(cos_b, edge.dot(other_edge) / (edge.length_squared))  # angles between pi/3 and 0
 
-        # Fix tabs for sticking targets with small angles
+        # if the sticking target has sharp angles, make the sticker as sharp
         try:
-            other_face_neighbor_left = other.neighbor_left
-            other_face_neighbor_right = other.neighbor_right
-            other_edge_neighbor_a = other_face_neighbor_left.vb.co - other.vb.co
-            other_edge_neighbor_b = other_face_neighbor_right.va.co - other.va.co
+            other_face_vb = other.uvface.edges[other.loop.link_loop_prev]
+            other_face_va = other.uvface.edges[other.loop.link_loop_next]
+            other_edge_neighbor_a = other_face_vb.va.co - other.vb.co
+            other_edge_neighbor_b = other_face_va.vb.co - other.va.co
             # Adjacent angles in the face
             cos_a = max(cos_a, -other_edge.dot(other_edge_neighbor_a) / (other_edge.length*other_edge_neighbor_a.length))
             cos_b = max(cos_b, other_edge.dot(other_edge_neighbor_b) / (other_edge.length*other_edge_neighbor_b.length))
@@ -1110,11 +1202,11 @@ class Sticker:
             pass
 
         # Calculate the lengths of the glue tab edges using the possibly smaller angles
-        sin_a = abs(1 - cos_a**2)**0.5
+        sin_a = sin_from_cos(cos_a)
         len_b = min(len_a, (edge.length * sin_a) / (sin_a * cos_b + sin_b * cos_a))
         len_a = 0 if sin_a == 0 else min(sticker_width / sin_a, (edge.length - len_b*cos_b) / cos_a)
 
-        sin_b = abs(1 - cos_b**2)**0.5
+        sin_b = sin_from_cos(cos_b)
         len_a = min(len_a, (edge.length * sin_b) / (sin_a * cos_b + sin_b * cos_a))
         len_b = 0 if sin_b == 0 else min(sticker_width / sin_b, (edge.length - len_a * cos_a) / cos_b)
 
@@ -1142,7 +1234,7 @@ class NumberAlone:
 
     def __init__(self, uvedge, index, default_size=0.005):
         """Sticker is directly attached to the given UVEdge"""
-        edge = (uvedge.va.co - uvedge.vb.co) if not uvedge.uvface.flipped else (uvedge.vb.co - uvedge.va.co)
+        edge = uvedge.vector
 
         self.size = default_size
         sin, cos = edge.y / edge.length, edge.x / edge.length

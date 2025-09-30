@@ -282,7 +282,10 @@ class ExportPaperModel(bpy.types.Operator):
         default=True)
     sticker_width: bpy.props.FloatProperty(
         name="Tabs and Text Size", description="Width of gluing tabs and their numbers",
-        default=0.005, soft_min=0, soft_max=0.05, step=0.1, subtype="UNSIGNED", unit="LENGTH")
+        default=0.005, min=0, soft_max=0.05, step=0.01, subtype="UNSIGNED", unit="LENGTH")
+    paper_thickness: bpy.props.FloatProperty(
+        name="Paper Thickness", description="Compensate for thick material before gluing tabs",
+        default=0.000, min=0, soft_max=0.05, step=0.001, subtype="UNSIGNED", unit="LENGTH")
     angle_epsilon: bpy.props.FloatProperty(
         name="Hidden Edge Angle", description="Folds with angle below this limit will not be drawn",
         default=pi/360, min=0, soft_max=pi/4, step=0.01, subtype="ANGLE", unit="ROTATION")
@@ -380,7 +383,7 @@ class ExportPaperModel(bpy.types.Operator):
             exporter_class = Svg if self.properties.file_format == 'SVG' else Json if self.properties.file_format == 'JSON' else Pdf
             exporter = exporter_class(self.properties)
             self.unfolder.save(self.properties, exporter)
-            self.report({'INFO'}, "Saved a {}-page document".format(len(self.unfolder.mesh.pages)))
+            self.report({'INFO'}, f"Saved a {len(self.unfolder.mesh.pages)}-page document to {self.properties.filepath}")
             return {'FINISHED'}
         except UnfoldError as error:
             self.report(type={'ERROR_INVALID_INPUT'}, message=error.args[0])
@@ -434,7 +437,10 @@ class ExportPaperModel(bpy.types.Operator):
             col = box.column()
             col.active = self.do_create_stickers or self.do_create_numbers
             col.prop(self.properties, "sticker_width")
+            col.prop(self.properties, "paper_thickness")
             box.prop(self.properties, "angle_epsilon")
+
+            box.prop(self.properties, "output_layers")
 
             box.prop(self.properties, "texture_type")
             col = box.column()
