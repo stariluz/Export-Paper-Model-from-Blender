@@ -5,7 +5,7 @@
 import os.path as os_path
 from functools import cached_property
 from itertools import chain, product, combinations
-from math import pi, asin, hypot, radians
+from math import pi, atan2, hypot, radians
 import bpy
 import bmesh
 from mathutils import Matrix, Vector
@@ -647,15 +647,12 @@ class Edge:
     def calculate_angle(self):
         """Calculate the angle between the main faces"""
         loop_a, loop_b = self.main_faces
-        normal_a, normal_b = (l.face.normal for l in self.main_faces)
-        if not normal_a or not normal_b:
-            self.angle = -3  # just a very sharp angle
-        else:
-            s = normal_a.cross(normal_b).dot(self.vector.normalized())
-            s = max(min(s, 1.0), -1.0)  # deal with rounding errors
-            self.angle = asin(s)
-            if loop_a.link_loop_next.vert != loop_b.vert or loop_b.link_loop_next.vert != loop_a.vert:
-                self.angle = abs(self.angle)
+        x = loop_a.face.normal.dot(loop_b.face.normal)
+        y = -loop_b.calc_tangent().dot(loop_a.face.normal)
+        self.angle = atan2(y, x)
+
+    def is_convex(self):
+        return (self.angle > 0) ^ self.uvedges[0].uvface.flipped
 
     def generate_priority(self, priority_effect, average_length):
         """Calculate the priority value for cutting"""
