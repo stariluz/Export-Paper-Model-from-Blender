@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 id = "export_paper_model"
 name = "Export Paper Model"
-version = "1.4.0"
+version = "1.4.1"
 tagline = "Export printable net of the active mesh"
 maintainer = "Community"
 type = "add-on"
