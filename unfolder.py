@@ -265,6 +265,7 @@ class Unfolder:
 class Mesh:
     """Wrapper for Bpy BMesh"""
 
+    # see BMesh documentation for info about loops, edges etc.: https://developer.blender.org/docs/features/objects/mesh/bmesh/
     def __init__(self, bm, matrix):
         self.data = bm
         self.matrix = matrix.to_3x3()
@@ -452,6 +453,7 @@ class Mesh:
                     planned_stickers[source] = target
         if paper_thickness:
             new_edges = []
+            # neighbors will change when in/outsetting stickers so we better precalculate the neighbor angles
             neighbor_angle = {edge: [pi + edge.neighbor_right.vector.angle_signed(edge.vector),
                     pi + edge.vector.angle_signed(edge.neighbor_left.vector)]
                 for edge in planned_stickers}
@@ -467,7 +469,8 @@ class Mesh:
                     new_edges.append(source.insert_neighbor_left())
                     is_double_vertex[1] = True
                 cos_angle = source.uvface.face.normal.dot(target.uvface.face.normal)
-                offset = paper_thickness / sin_from_cos(cos_angle)
+                sign = -1 if self.edges[source.loop.edge].is_convex() else 1
+                offset = sign * paper_thickness / sin_from_cos(cos_angle)
                 source.slide(offset, is_double_vertex)
             # TODO: merge zero-length new_edges
         for source, target in planned_stickers.items():
@@ -1062,15 +1065,15 @@ class UVEdge:
 
     def slide(self, offset, allow_orthogonal=(True, True)):
         normal = rot90(self.vector).normalized()
-        def slide_vertex(vertex, rail_loop, sign, angle, orthogonal):
-            direction = self.uvface.edges[rail_loop].vector.normalized() if angle < obtuse_angle or not orthogonal else normal
-            if self.uvface.flipped:
-                sign *= -1
-            distance = offset * sign / max(abs(normal.dot(direction)), 0.1)
+        def slide_vertex(vertex, rail_loop, orthogonal):
+            rail = self.uvface.edges[rail_loop].vector.normalized()
+            rail *= -1 if normal.dot(rail) < 0 else 1
+            direction = normal if offset > 0 or orthogonal else rail
+            distance = offset / max(abs(normal.dot(direction)), 0.1)
             vertex.co += direction * distance
 
-        slide_vertex(self.va, self.loop.link_loop_prev, -1, self.loop.calc_angle(), allow_orthogonal[0])
-        slide_vertex(self.vb, self.loop.link_loop_next, 1, self.loop.link_loop_next.calc_angle(), allow_orthogonal[1])
+        slide_vertex(self.va, self.loop.link_loop_prev, self.loop.calc_angle() >= obtuse_angle and allow_orthogonal[0])
+        slide_vertex(self.vb, self.loop.link_loop_next, self.loop.link_loop_next.calc_angle() >= obtuse_angle and allow_orthogonal[1])
         self.update()
 
     def insert_neighbor_left(self):
