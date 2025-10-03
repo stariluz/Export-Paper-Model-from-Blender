@@ -215,9 +215,9 @@ class Unfolder:
         # after this call, all dimensions will be in meters
         self.mesh.scale_islands(unit_scale/properties.scale)
         if properties.do_create_stickers:
-            self.mesh.generate_stickers(properties.sticker_width, properties.do_create_numbers, properties.paper_thickness)
+            self.mesh.generate_stickers(properties.sticker_width, properties.do_create_numbers, properties.numbers_inside, properties.paper_thickness)
         elif properties.do_create_numbers:
-            self.mesh.generate_numbers_alone(properties.sticker_width)
+            self.mesh.generate_numbers_alone(properties.sticker_width, properties.numbers_inside)
 
         text_height = properties.sticker_width if (properties.do_create_numbers and len(self.mesh.islands) > 1) else 0
         # title height must be somewhat larger that text size, glyphs go below the baseline
@@ -419,7 +419,7 @@ class Mesh:
                     right.neighbor_left = left
         return True
 
-    def generate_stickers(self, default_width, do_create_numbers=True, paper_thickness=0.0):
+    def generate_stickers(self, default_width, do_create_numbers=True, numbers_inside=True, paper_thickness=0.0):
         """Add sticker faces where they are needed."""
         def uvedge_priority(uvedge):
             """Returns whether it is a good idea to stick something on this edge's face"""
@@ -468,7 +468,7 @@ class Mesh:
                     new_edges.append(source.insert_neighbor_left())
                     is_double_vertex[1] = True
                 cos_angle = source.uvface.face.normal.dot(target.uvface.face.normal)
-                sign = -1 if self.edges[source.loop.edge].is_convex() else 1
+                sign = -1 if self.edges[source.loop.edge].is_convex() ^ source.uvface.island.is_inside_out else 1
                 offset = sign * paper_thickness / sin_from_cos(cos_angle)
                 source.slide(offset, is_double_vertex)
             # TODO: merge zero-length new_edges
@@ -483,12 +483,15 @@ class Mesh:
                         index = str(target_island.sticker_numbering)
                         if is_upsidedown_wrong(index):
                             index += "."
-                        target_island.add_marker(Arrow(target, default_width, index))
+                        if numbers_inside:
+                            target_island.add_marker(NumberAlone(target, default_width, index, numbers_inside))
+                        else:
+                            target_island.add_marker(Arrow(target, default_width, index))
                         break
             source.sticker = Sticker(source, default_width, index, target)
             source.uvface.island.add_marker(source.sticker)
 
-    def generate_numbers_alone(self, size):
+    def generate_numbers_alone(self, size, numbers_inside=True):
         global_numbering = 0
         for edge in self.edges.values():
             if edge.is_main_cut and len(edge.uvedges) >= 2:
@@ -497,7 +500,7 @@ class Mesh:
                 if is_upsidedown_wrong(index):
                     index += "."
                 for uvedge in edge.uvedges:
-                    uvedge.uvface.island.add_marker(NumberAlone(uvedge, index, size))
+                    uvedge.uvface.island.add_marker(NumberAlone(uvedge, size, index, numbers_inside))
 
     def enumerate_islands(self):
         for num, island in enumerate(self.islands, 1):
@@ -1232,15 +1235,16 @@ class NumberAlone:
     """Mark in the document: numbering inside the island denoting edges to be sticked"""
     __slots__ = ('bounds', 'center', 'rot', 'text', 'size')
 
-    def __init__(self, uvedge, index, default_size=0.005):
+    def __init__(self, uvedge, default_width, index, inside=False):
         """Sticker is directly attached to the given UVEdge"""
         edge = uvedge.vector
 
-        self.size = default_size
+        self.size = default_width
         sin, cos = edge.y / edge.length, edge.x / edge.length
         self.rot = rotation_matrix(sin, cos)
         self.text = index
-        self.center = (uvedge.va.co + uvedge.vb.co) / 2 - self.rot @ Vector((0, self.size * 1.2))
+        placement = -0.2 if inside else 1.2
+        self.center = (uvedge.va.co + uvedge.vb.co) / 2 - self.rot @ Vector((0, self.size * placement))
         self.bounds = [self.center]
 
 

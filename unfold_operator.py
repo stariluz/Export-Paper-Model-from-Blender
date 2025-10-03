@@ -280,6 +280,9 @@ class ExportPaperModel(bpy.types.Operator):
     do_create_numbers: bpy.props.BoolProperty(
         name="Create Numbers", description="Enumerate edges to make it clear which edges should be sticked together",
         default=True)
+    numbers_inside: bpy.props.BoolProperty(
+        name="Numbers on the Inside", description="Place edge enumeration inside the net",
+        default=True)
     sticker_width: bpy.props.FloatProperty(
         name="Tabs and Text Size", description="Width of gluing tabs and their numbers",
         default=0.005, min=0, soft_max=0.05, step=0.01, subtype="UNSIGNED", unit="LENGTH")
@@ -434,6 +437,9 @@ class ExportPaperModel(bpy.types.Operator):
             col = box.column()
             col.prop(self.properties, "do_create_stickers")
             col.prop(self.properties, "do_create_numbers")
+            col = box.column()
+            col.active = self.do_create_numbers
+            col.prop(self.properties, "numbers_inside")
             col = box.column()
             col.active = self.do_create_stickers or self.do_create_numbers
             col.prop(self.properties, "sticker_width")
