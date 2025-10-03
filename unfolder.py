@@ -372,7 +372,7 @@ class Mesh:
             # if the normals are ambiguous, flip them so that there are more convex edges than concave ones
             if any(uvface.flipped for uvface in island.faces.values()):
                 island_edges = {self.edges[uvedge.edge] for uvedge in island.edges}
-                balance = sum((+1 if edge.angle > 0 else -1) for edge in island_edges if not edge.is_cut(uvedge.uvface.face))
+                balance = sum((+1 if edge.angle > 0 else -1) for edge in island_edges)
                 if balance < 0:
                     island.is_inside_out = True
 
@@ -445,7 +445,6 @@ class Mesh:
                 source = edge.uvedges[1]
                 if uvedge_priority(target) < uvedge_priority(source):
                     target, source = source, target
-                target_island = target.uvface.island
                 planned_stickers[source] = target
             if len(edge.uvedges) > 2:
                 # todo: paper_thickness compensation is not correct for multiple stacked stickers
@@ -476,6 +475,7 @@ class Mesh:
         for source, target in planned_stickers.items():
             index = None
             if do_create_numbers:
+                target_island = target.uvface.island
                 for uvedge in [source] + edge.uvedges[2:]:
                     # create numbers (and arrows) only if necessary for understanding
                     if not is_index_obvious(uvedge, target):
