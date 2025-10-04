@@ -241,11 +241,11 @@ class ExportPaperModel(bpy.types.Operator):
     bl_options = {'PRESET'}
 
     filepath: bpy.props.StringProperty(
-        name="File Path", description="Target file to save the SVG", options={'SKIP_SAVE'})
+        name="File Path", description="Target file to save the SVG", options={'SKIP_SAVE'}, subtype='FILE_PATH')
     filename: bpy.props.StringProperty(
-        name="File Name", description="Name of the file", options={'SKIP_SAVE'})
+        name="File Name", description="Name of the file", options={'SKIP_SAVE'}, subtype='FILE_NAME')
     directory: bpy.props.StringProperty(
-        name="Directory", description="Directory of the file", options={'SKIP_SAVE'})
+        name="Directory", description="Directory of the file", options={'SKIP_SAVE'}, subtype='DIR_PATH')
     page_size_preset: bpy.props.EnumProperty(
         name="Page Size", description="Size of the exported document",
         default='A4', update=page_size_preset_changed, items=global_paper_sizes)
@@ -274,17 +274,21 @@ class ExportPaperModel(bpy.types.Operator):
             ('TWOSIDE', "Two Sided", "Texture exported to odd pages, drawing to even pages"),
             ('SEPARATE', "Separate", "Texture and drawing exported as two separate documents"),
         ])
-    do_create_stickers: bpy.props.BoolProperty(
-        name="Create Tabs", description="Create gluing tabs around the net (useful for paper)",
-        default=True)
-    do_create_numbers: bpy.props.BoolProperty(
-        name="Create Numbers", description="Enumerate edges to make it clear which edges should be sticked together",
-        default=True)
-    numbers_inside: bpy.props.BoolProperty(
-        name="Numbers on the Inside", description="Place edge enumeration inside the net",
-        default=True)
+    tab_style: bpy.props.EnumProperty(
+        name="Tabs", description="Create gluing tabs around the net",
+        default='STICKER', items=[
+            ('NONE', "None", "Do not create tabs"),
+            ('STICKER', "Stickers", "Create angled tabs (useful for paper)"),
+        ])
+    number_style: bpy.props.EnumProperty(
+        name="Numbers", description="Enumerate edges to make it clear which edges should be sticked together",
+        default='INSIDE', items=[
+            ('NONE', "None", "Do not enumerate edges"),
+            ('INSIDE', "Inside", "Draw enumeration within the net"),
+            ('OUTSIDE', "Outside", "Draw enumeration outside of the net"),
+        ])
     sticker_width: bpy.props.FloatProperty(
-        name="Tabs and Text Size", description="Width of gluing tabs and their numbers",
+        name="Tabs and Text Size", description="Width of gluing tabs and numbers",
         default=0.005, min=0, soft_max=0.05, step=0.01, subtype="UNSIGNED", unit="LENGTH")
     paper_thickness: bpy.props.FloatProperty(
         name="Paper Thickness", description="Compensate for thick material before gluing tabs",
@@ -435,13 +439,10 @@ class ExportPaperModel(bpy.types.Operator):
             col.prop(self.properties, "output_size_y")
             box.prop(self.properties, "output_margin")
             col = box.column()
-            col.prop(self.properties, "do_create_stickers")
-            col.prop(self.properties, "do_create_numbers")
+            col.prop(self.properties, "tab_style")
+            col.prop(self.properties, "number_style")
             col = box.column()
-            col.active = self.do_create_numbers
-            col.prop(self.properties, "numbers_inside")
-            col = box.column()
-            col.active = self.do_create_stickers or self.do_create_numbers
+            col.active = self.tab_style != 'NONE' or self.number_style != 'NONE'
             col.prop(self.properties, "sticker_width")
             col.prop(self.properties, "paper_thickness")
             box.prop(self.properties, "angle_epsilon")
@@ -503,7 +504,7 @@ class ExportPaperModel(bpy.types.Operator):
             sub.prop(self.style, "inbg_color", text="")
             sub.prop(self.style, "inbg_width", text="Relative width")
             col = box.column()
-            col.active = self.do_create_stickers
+            col.active = self.tab_style != 'NONE'
             col.prop(self.style, "sticker_color")
             box.prop(self.style, "text_color")
 

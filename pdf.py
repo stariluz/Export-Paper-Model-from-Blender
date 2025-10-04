@@ -151,9 +151,10 @@ class Pdf(Exporter):
                             mat=size * marker.rot,
                             size=size))
                     elif isinstance(marker, NumberAlone):
+                        position = 1000*marker.center - 1000 * marker.rot @ Vector((0.5 * self.text_width(marker.text), 0))
                         data_markers.append(self.command_number.format(
                             label=marker.text,
-                            pos=1000*marker.center,
+                            pos=position,
                             mat=marker.rot,
                             size=1000*marker.size))
 

@@ -214,12 +214,12 @@ class Unfolder:
 
         # after this call, all dimensions will be in meters
         self.mesh.scale_islands(unit_scale/properties.scale)
-        if properties.do_create_stickers:
-            self.mesh.generate_stickers(properties.sticker_width, properties.do_create_numbers, properties.numbers_inside, properties.paper_thickness)
-        elif properties.do_create_numbers:
-            self.mesh.generate_numbers_alone(properties.sticker_width, properties.numbers_inside)
+        if properties.tab_style == 'STICKER':
+            self.mesh.generate_stickers(properties.sticker_width, properties.number_style, properties.paper_thickness)
+        elif properties.number_style != 'NONE':
+            self.mesh.generate_numbers_alone(properties.sticker_width, properties.number_style == 'INSIDE')
 
-        text_height = properties.sticker_width if (properties.do_create_numbers and len(self.mesh.islands) > 1) else 0
+        text_height = properties.sticker_width if (properties.number_style != 'NONE' and len(self.mesh.islands) > 1) else 0
         # title height must be somewhat larger that text size, glyphs go below the baseline
         self.mesh.finalize_islands(printable_size, title_height=text_height * 1.2)
         self.mesh.pages = paginate_islands(self.mesh.islands, printable_size, properties.nesting_method)
@@ -419,7 +419,7 @@ class Mesh:
                     right.neighbor_left = left
         return True
 
-    def generate_stickers(self, default_width, do_create_numbers=True, numbers_inside=True, paper_thickness=0.0):
+    def generate_stickers(self, default_width, number_style, paper_thickness=0.0):
         """Add sticker faces where they are needed."""
         def uvedge_priority(uvedge):
             """Returns whether it is a good idea to stick something on this edge's face"""
@@ -474,7 +474,7 @@ class Mesh:
             # TODO: merge zero-length new_edges
         for source, target in planned_stickers.items():
             index = None
-            if do_create_numbers:
+            if number_style != 'NONE':
                 target_island = target.uvface.island
                 for uvedge in [source] + edge.uvedges[2:]:
                     # create numbers (and arrows) only if necessary for understanding
@@ -483,8 +483,8 @@ class Mesh:
                         index = str(target_island.sticker_numbering)
                         if is_upsidedown_wrong(index):
                             index += "."
-                        if numbers_inside:
-                            target_island.add_marker(NumberAlone(target, default_width, index, numbers_inside))
+                        if number_style == 'INSIDE':
+                            target_island.add_marker(NumberAlone(target, default_width, index, True))
                         else:
                             target_island.add_marker(Arrow(target, default_width, index))
                         break
@@ -1255,6 +1255,5 @@ class Exporter:
         margin = properties.output_margin
         self.margin = Vector((margin, margin))
         self.pure_net = (properties.texture_type == 'NONE')
-        self.do_create_stickers = properties.do_create_stickers
         self.text_size = properties.sticker_width
         self.angle_epsilon = properties.angle_epsilon
