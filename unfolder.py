@@ -270,26 +270,19 @@ class Mesh:
         self.data = bm
         self.matrix = matrix.to_3x3()
         self.looptex = bm.loops.layers.uv.new("Unfolded")
-        self.edges = {bmedge: Edge(bmedge) for bmedge in bm.edges}
+        edge_layers = bm.edges.layers.bool
+        freestyle_layer = edge_layers.get("freestyle_edge")
+        self.edges = {bmedge: Edge(bmedge, freestyle_layer) for bmedge in bm.edges}
         self.islands = []
         self.pages = []
         for edge in self.edges.values():
             edge.choose_main_faces()
             if edge.main_faces:
                 edge.calculate_angle()
-        self.copy_freestyle_marks()
 
     def delete_uvmap(self):
         if self.looptex:
             self.data.loops.layers.uv.remove(self.looptex)
-
-    def copy_freestyle_marks(self):
-        # NOTE: this is a workaround for NotImplementedError on bmesh.edges.layers.freestyle
-        mesh = bpy.data.meshes.new("unfolder_temp")
-        self.data.to_mesh(mesh)
-        for bmedge, edge in self.edges.items():
-            edge.freestyle = mesh.edges[bmedge.index].use_freestyle_mark
-        bpy.data.meshes.remove(mesh)
 
     def mark_cuts(self):
         for bmedge, edge in self.edges.items():
@@ -618,22 +611,22 @@ class Edge:
         'vector', 'angle',
         'is_main_cut', 'force_cut', 'priority', 'freestyle')
 
-    def __init__(self, edge):
-        self.data = edge
-        self.va, self.vb = edge.verts
+    def __init__(self, bmedge, freestyle_layer):
+        self.data = bmedge
+        self.va, self.vb = bmedge.verts
         self.vector = self.vb.co - self.va.co
         # if self.main_faces is set, then self.uvedges[:2] must correspond to self.main_faces, in their order
         # this constraint is assured at the time of finishing mesh.generate_cuts
         self.uvedges = []
 
-        self.force_cut = edge.seam  # such edges will always be cut
+        self.force_cut = bmedge.seam  # such edges will always be cut
         self.main_faces = None  # two faces that may be connected in the island
         # is_main_cut defines whether the two main faces are connected
         # all the others will be assumed to be cut
         self.is_main_cut = True
         self.priority = None
         self.angle = None
-        self.freestyle = False
+        self.freestyle = bmedge[freestyle_layer] if freestyle_layer else False
 
     def choose_main_faces(self):
         """Choose two main faces that might get connected in an island"""

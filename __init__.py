@@ -4,8 +4,8 @@
 bl_info = {
     "name": "Export Paper Model",
     "author": "Addam Dominec",
-    "version": (1, 3, 1),
-    "blender": (3, 0, 0),
+    "version": (1, 4, 2),
+    "blender": (5, 0, 0),
     "location": "File > Export > Paper Model",
     "warning": "",
     "description": "Export printable net of the active mesh",
@@ -28,9 +28,10 @@ from . import unfold_operator
 
 def factory_update_addon_category(cls, prop):
     def func(self, context):
+        print(self, type(self))
         if hasattr(bpy.types, cls.__name__):
             bpy.utils.unregister_class(cls)
-        cls.bl_category = self[prop]
+        cls.bl_category = getattr(self, prop)
         bpy.utils.register_class(cls)
     return func
 
