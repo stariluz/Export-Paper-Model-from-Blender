@@ -240,7 +240,8 @@ class Unfolder:
             lookup = {'TEXTURE': 'DIFFUSE', 'AMBIENT_OCCLUSION': 'AO', 'RENDER': 'COMBINED', 'SELECTED_TO_ACTIVE': 'COMBINED'}
             sce.cycles.bake_type = lookup[properties.texture_type]
             bk.use_selected_to_active = (properties.texture_type == 'SELECTED_TO_ACTIVE')
-            bk.margin, bk.cage_extrusion, bk.use_cage, bk.use_clear = 1, 10, False, False
+            bk.cage_extrusion, bk.use_cage, bk.use_clear = 10, False, False
+            bk.margin = properties.texture_margin
             if properties.texture_type == 'TEXTURE':
                 bk.use_pass_direct, bk.use_pass_indirect, bk.use_pass_color = False, False, True
                 sce.cycles.samples = 1
@@ -598,7 +599,7 @@ class Mesh:
         try:
             ob.update_from_editmode()
             me.uv_layers.active = me.uv_layers[self.looptex.name]
-            bpy.ops.object.bake(type=bake_type, margin=1, use_selected_to_active=sta, cage_extrusion=100, use_clear=False)
+            bpy.ops.object.bake(type=bake_type, margin=bpy.context.scene.render.bake.margin, use_selected_to_active=sta, cage_extrusion=100, use_clear=False)
         except RuntimeError as e:
             raise UnfoldError(*e.args)
         finally:
