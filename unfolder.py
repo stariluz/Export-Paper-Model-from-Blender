@@ -599,7 +599,7 @@ class Mesh:
         try:
             ob.update_from_editmode()
             me.uv_layers.active = me.uv_layers[self.looptex.name]
-            bpy.ops.object.bake(type=bake_type, margin=bpy.context.scene.render.bake.margin, use_selected_to_active=sta, cage_extrusion=100, use_clear=False)
+            bpy.ops.object.bake(type=bake_type, use_selected_to_active=sta, cage_extrusion=100, use_clear=False)
         except RuntimeError as e:
             raise UnfoldError(*e.args)
         finally:
