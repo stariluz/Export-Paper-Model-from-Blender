@@ -267,6 +267,9 @@ class ExportPaperModel(bpy.types.Operator):
             ('RENDER', "Full Render", "Render the material in actual scene illumination"),
             ('SELECTED_TO_ACTIVE', "Selected to Active", "Render all selected surrounding objects as a texture")
         ])
+    texture_margin: bpy.props.IntProperty(name="Texture image margin",
+        description="Extend the texture image beyond the edge of the islands to avoid gaps",
+        default=1, soft_min=0, subtype="UNSIGNED")
     output_layers: bpy.props.EnumProperty(
         name="Layers", description="Separation of drawings by meaning",
         default='ONESIDE', items=[
@@ -459,6 +462,8 @@ class ExportPaperModel(bpy.types.Operator):
             row = col.row()
             row.active = self.texture_type in ('AMBIENT_OCCLUSION', 'RENDER', 'SELECTED_TO_ACTIVE')
             row.prop(self.properties, "bake_samples")
+            row = col.row()
+            row.prop(self.properties, "texture_margin", text="Texture margin (px)")
             col.prop(self.properties, "output_dpi")
             row = col.row()
             row.active = self.file_format == 'SVG'
